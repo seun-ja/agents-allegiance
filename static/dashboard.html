@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Allegiance Arena — Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a1a; color: #e0e0e0; overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 24px; background: #141428; border-bottom: 1px solid #2a2a4a;
+        }
+        .header h1 { font-size: 20px; color: #7c6ff7; }
+        .header .status-bar { display: flex; gap: 16px; align-items: center; }
+        .badge {
+            padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge-setup { background: #2a2a4a; color: #888; }
+        .badge-lobby { background: #1a3a2a; color: #4ade80; }
+        .badge-running { background: #1a2a3a; color: #60a5fa; }
+        .badge-paused { background: #3a3a1a; color: #fbbf24; }
+        .badge-ended { background: #3a1a1a; color: #f87171; }
+        .timer { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; }
+        .phase-label { font-size: 12px; color: #888; text-transform: uppercase; }
+        .round-info { font-size: 14px; color: #aaa; }
+        .logout-btn {
+            padding: 6px 16px; border: 1px solid #444; border-radius: 6px;
+            background: transparent; color: #aaa; cursor: pointer; font-size: 12px;
+            text-decoration: none;
+        }
+        .logout-btn:hover { border-color: #f87171; color: #f87171; }
+
+        /* Main layout */
+        .main {
+            display: grid; grid-template-columns: 240px 1fr 280px;
+            grid-template-rows: auto 1fr; gap: 16px; padding: 16px;
+            height: calc(100vh - 65px);
+        }
+
+        /* Panels */
+        .panel {
+            background: #141428; border: 1px solid #2a2a4a; border-radius: 10px;
+            padding: 16px; overflow-y: auto;
+        }
+        .panel h2 {
+            font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+            color: #666; margin-bottom: 12px;
+        }
+
+        /* Leaderboard */
+        .leaderboard { grid-row: 1 / 3; }
+        .lb-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px; border-radius: 6px; margin-bottom: 4px;
+            transition: background 0.2s;
+        }
+        .lb-item:hover { background: #1a1a3a; }
+        .lb-rank { width: 20px; color: #666; font-size: 12px; }
+        .lb-name { flex: 1; font-weight: 500; margin-left: 8px; }
+        .lb-score { font-weight: 700; font-variant-numeric: tabular-nums; }
+        .lb-change { font-size: 11px; margin-left: 6px; }
+        .lb-change.positive { color: #4ade80; }
+        .lb-change.negative { color: #f87171; }
+        .lb-item:nth-child(1) .lb-name { color: #fbbf24; }
+        .lb-item:nth-child(2) .lb-name { color: #c0c0c0; }
+        .lb-item:nth-child(3) .lb-name { color: #cd7f32; }
+
+        /* Ring Arena */
+        .ring-arena { grid-column: 2; grid-row: 1; min-height: 380px; display: flex; flex-direction: column; }
+        .ring-svg { flex: 1; width: 100%; }
+
+        /* Right sidebar */
+        .right-sidebar { grid-row: 1 / 3; display: flex; flex-direction: column; gap: 12px; }
+
+        /* Activity Feed */
+        .activity-feed { flex: 1; min-height: 0; }
+        .feed-item {
+            padding: 6px 0; border-bottom: 1px solid #1a1a2a; font-size: 13px;
+            line-height: 1.4;
+        }
+        .feed-dm { color: #60a5fa; }
+        .feed-bc { color: #a78bfa; }
+        .feed-time { color: #555; font-size: 11px; }
+        .feed-arrow { color: #666; }
+
+        /* Bottom panels */
+        .bottom-row {
+            grid-column: 2; display: grid; grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* Score Chart */
+        .chart-container { position: relative; height: 200px; }
+
+        /* Vote Matrix */
+        .vote-matrix table {
+            width: 100%; border-collapse: collapse; font-size: 12px;
+        }
+        .vote-matrix th, .vote-matrix td {
+            padding: 4px 6px; text-align: center; border: 1px solid #1a1a2a;
+        }
+        .vote-matrix th { color: #888; font-weight: 500; }
+        .vote-s { color: #4ade80; font-weight: 700; }
+        .vote-d { color: #f87171; font-weight: 700; }
+        .vote-na { color: #333; }
+
+        /* Admin Controls */
+        .admin-bar {
+            display: flex; gap: 8px; padding: 12px 24px;
+            background: #141428; border-top: 1px solid #2a2a4a;
+            justify-content: center; flex-wrap: wrap;
+        }
+        .admin-btn {
+            padding: 8px 20px; border: 1px solid #2a2a4a; border-radius: 6px;
+            background: #1a1a3a; color: #e0e0e0; cursor: pointer; font-size: 13px;
+            transition: all 0.2s;
+        }
+        .admin-btn:hover { border-color: #7c6ff7; background: #2a2a4a; }
+        .admin-btn.danger { border-color: #5a2a2a; }
+        .admin-btn.danger:hover { border-color: #f87171; background: #3a1a1a; }
+        .admin-btn.primary { background: #7c6ff7; border-color: #7c6ff7; color: white; }
+        .admin-btn.primary:hover { background: #6a5de0; }
+        .admin-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        select.admin-select {
+            padding: 8px 12px; border: 1px solid #2a2a4a; border-radius: 6px;
+            background: #1a1a3a; color: #e0e0e0; font-size: 13px;
+        }
+        input.admin-input {
+            padding: 8px 12px; border: 1px solid #2a2a4a; border-radius: 6px;
+            background: #1a1a3a; color: #e0e0e0; font-size: 13px; width: 60px;
+        }
+
+        /* Legend */
+        .legend { display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: #666; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .legend-dot { width: 10px; height: 3px; border-radius: 2px; }
+        .legend-dot.green { background: #4ade80; }
+        .legend-dot.red { background: #f87171; }
+        .legend-dot.orange { background: #fbbf24; }
+        .legend-dot.gray { background: #444; }
+
+        /* Vote Status */
+        .vote-status { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .vote-chip {
+            padding: 2px 10px; border-radius: 10px; font-size: 11px;
+        }
+        .vote-chip.voted { background: #1a3a2a; color: #4ade80; }
+        .vote-chip.pending { background: #3a3a1a; color: #fbbf24; }
+
+        /* Round selector */
+        .round-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .round-nav button {
+            padding: 4px 8px; border: 1px solid #2a2a4a; border-radius: 4px;
+            background: #1a1a3a; color: #aaa; cursor: pointer; font-size: 12px;
+        }
+        .round-nav button:hover { border-color: #7c6ff7; }
+        .round-nav span { font-size: 13px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1>&#9813; Allegiance Arena</h1>
+        <div class="status-bar">
+            <span id="round-info" class="round-info">—</span>
+            <div>
+                <div class="phase-label" id="phase-label">—</div>
+                <div class="timer" id="timer">—</div>
+            </div>
+            <span id="status-badge" class="badge badge-setup">SETUP</span>
+        </div>
+        <a href="/logout" class="logout-btn">Logout</a>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="main">
+        <!-- Leaderboard -->
+        <div class="panel leaderboard">
+            <h2>Leaderboard</h2>
+            <div id="leaderboard-list"></div>
+        </div>
+
+        <!-- Ring Arena -->
+        <div class="panel ring-arena">
+            <h2>Arena Ring</h2>
+            <svg id="ring-svg" class="ring-svg"></svg>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot green"></div> Mutual Allegiance</div>
+                <div class="legend-item"><div class="legend-dot orange"></div> One-way Pledge</div>
+                <div class="legend-item"><div class="legend-dot gray"></div> No data</div>
+            </div>
+            <div id="vote-status" class="vote-status"></div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="right-sidebar">
+            <div class="panel activity-feed">
+                <h2>Activity Feed</h2>
+                <div id="feed-list"></div>
+            </div>
+        </div>
+
+        <!-- Bottom Row -->
+        <div class="bottom-row">
+            <div class="panel">
+                <h2>Score History</h2>
+                <div class="chart-container">
+                    <canvas id="score-chart"></canvas>
+                </div>
+            </div>
+            <div class="panel vote-matrix">
+                <div class="round-nav">
+                    <button id="round-prev">&lt;</button>
+                    <span id="round-display">Round —</span>
+                    <button id="round-next">&gt;</button>
+                </div>
+                <h2>Allegiance Map</h2>
+                <div id="matrix-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Bar -->
+    <div class="admin-bar">
+        <button id="btn-open-lobby" class="admin-btn primary" onclick="adminAction('open_lobby')">Open Lobby</button>
+        <input id="input-rounds" class="admin-input" type="number" value="10" min="1" max="100" title="Number of rounds">
+        <button id="btn-start" class="admin-btn primary" onclick="adminAction('start_game')" disabled>Start Game</button>
+        <button id="btn-pause" class="admin-btn" onclick="adminAction('pause_game')" disabled>Pause</button>
+        <button id="btn-resume" class="admin-btn" onclick="adminAction('resume_game')" disabled>Resume</button>
+        <button id="btn-end" class="admin-btn danger" onclick="adminAction('end_game')" disabled>End Game</button>
+        <select id="select-kick" class="admin-select"><option value="">Kick player...</option></select>
+        <button id="btn-kick" class="admin-btn danger" onclick="kickPlayer()" disabled>Kick</button>
+        <button id="btn-reset" class="admin-btn danger" onclick="adminAction('reset_game')">Reset</button>
+    </div>
+
+<script>
+// --- State ---
+let state = {};
+let ws = null;
+let scoreChart = null;
+let timerInterval = null;
+let viewingRound = null;
+
+// --- WebSocket ---
+function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws/dashboard`);
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.event === 'initial_state' || msg.event === 'state_update') {
+            state = msg.data;
+            render();
+        } else if (msg.event === 'round_started' || msg.event === 'phase_changed' ||
+                   msg.event === 'round_resolved' || msg.event === 'game_ended' ||
+                   msg.event === 'game_started' || msg.event === 'game_paused' ||
+                   msg.event === 'game_resumed') {
+            // Fetch full state
+            fetch('/api/state').then(r => r.json()).then(d => { state = d; render(); });
+        }
+    };
+    ws.onclose = () => setTimeout(connectWS, 2000);
+    ws.onerror = () => ws.close();
+
+    // Keep alive
+    setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 30000);
+}
+connectWS();
+
+// --- Admin Actions ---
+async function adminAction(action) {
+    const body = { action };
+    if (action === 'start_game') {
+        body.rounds = parseInt(document.getElementById('input-rounds').value) || 10;
+    }
+    const r = await fetch('/api/admin', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (data.error) alert(data.error);
+}
+
+async function kickPlayer() {
+    const name = document.getElementById('select-kick').value;
+    if (!name) return;
+    if (!confirm(`Kick "${name}"?`)) return;
+    await adminAction('kick_player');
+    await fetch('/api/admin', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action: 'kick_player', name })
+    });
+}
+
+// --- Render ---
+function render() {
+    renderHeader();
+    renderLeaderboard();
+    renderRing();
+    renderFeed();
+    renderScoreChart();
+    renderVoteMatrix();
+    renderAdminButtons();
+    renderVoteStatus();
+}
+
+function renderHeader() {
+    const s = state;
+    const badge = document.getElementById('status-badge');
+    badge.textContent = (s.status || 'setup').toUpperCase();
+    badge.className = `badge badge-${s.status || 'setup'}`;
+
+    const roundInfo = document.getElementById('round-info');
+    if (s.status === 'running' || s.status === 'paused') {
+        roundInfo.textContent = `Round ${s.current_round}/${s.total_rounds}`;
+    } else if (s.status === 'ended') {
+        roundInfo.textContent = s.winner ? `Winner: ${s.winner}` : 'Game Over';
+    } else {
+        roundInfo.textContent = `${(s.players || []).length} players`;
+    }
+
+    document.getElementById('phase-label').textContent = s.current_phase || '—';
+    startTimer();
+}
+
+function startTimer() {
+    clearInterval(timerInterval);
+    const el = document.getElementById('timer');
+    if (state.status !== 'running' || !state.time_remaining) {
+        el.textContent = '—';
+        return;
+    }
+    let remaining = state.time_remaining;
+    const update = () => {
+        if (remaining <= 0) { el.textContent = '0:00'; return; }
+        const m = Math.floor(remaining / 60);
+        const s = Math.floor(remaining % 60);
+        el.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+        remaining -= 1;
+    };
+    update();
+    timerInterval = setInterval(update, 1000);
+}
+
+function renderLeaderboard() {
+    const list = document.getElementById('leaderboard-list');
+    const lb = state.leaderboard || [];
+    list.innerHTML = lb.map(p => {
+        const prevScores = state.all_round_results || {};
+        const rounds = Object.keys(prevScores).map(Number).sort((a,b) => a-b);
+        let change = '';
+        if (rounds.length > 0) {
+            const lastRound = rounds[rounds.length - 1];
+            const ch = prevScores[lastRound]?.score_changes?.[p.name];
+            if (ch !== undefined && ch !== 0) {
+                change = `<span class="lb-change ${ch > 0 ? 'positive' : 'negative'}">${ch > 0 ? '+' : ''}${ch}</span>`;
+            }
+        }
+        return `<div class="lb-item">
+            <span class="lb-rank">${p.rank}</span>
+            <span class="lb-name">${esc(p.name)}</span>
+            <span class="lb-score">${p.score}</span>${change}
+        </div>`;
+    }).join('');
+}
+
+function renderRing() {
+    const svg = d3.select('#ring-svg');
+    svg.selectAll('*').remove();
+
+    const players = state.players || [];
+    if (players.length === 0) {
+        svg.append('text').attr('x', '50%').attr('y', '50%')
+            .attr('text-anchor', 'middle').attr('fill', '#444').attr('font-size', 14)
+            .text('No players yet');
+        return;
+    }
+
+    const rect = document.getElementById('ring-svg').getBoundingClientRect();
+    const w = rect.width || 500;
+    const h = rect.height || 300;
+    const cx = w / 2, cy = h / 2;
+    const radius = Math.min(cx, cy) - 50;
+
+    // Node positions on ring
+    const nodes = players.map((p, i) => {
+        const angle = (2 * Math.PI * i / players.length) - Math.PI / 2;
+        const maxScore = Math.max(...players.map(x => Math.abs(x.score)), 1);
+        const nodeR = 10 + (Math.abs(p.score) / maxScore) * 20;
+        return { ...p, x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle), r: nodeR, angle };
+    });
+
+    // Draw edges (from last round results — pledges)
+    const lastResult = state.last_round_result;
+    if (lastResult && lastResult.pledges) {
+        const nameMap = {};
+        nodes.forEach(n => nameMap[n.name] = n);
+        const pledges = lastResult.pledges;
+        const mutualSet = new Set();
+        (lastResult.mutual_pairs || []).forEach(pair => {
+            mutualSet.add(pair[0] + '→' + pair[1]);
+            mutualSet.add(pair[1] + '→' + pair[0]);
+        });
+
+        // Draw pledge arrows
+        Object.entries(pledges).forEach(([voter, target]) => {
+            if (!target || !nameMap[voter] || !nameMap[target]) return;
+            const a = nameMap[voter], b = nameMap[target];
+            const isMutual = mutualSet.has(voter + '→' + target);
+            const color = isMutual ? '#4ade80' : '#fbbf24';
+            let width = isMutual ? 3 : 1.5;
+
+            // Thicken for alliance streaks
+            const alliances = state.alliances || [];
+            const alli = alliances.find(al =>
+                (al.agents[0] === voter && al.agents[1] === target) ||
+                (al.agents[0] === target && al.agents[1] === voter)
+            );
+            if (alli) width = 3 + alli.current_streak;
+
+            // Draw arrow line
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len = Math.sqrt(dx*dx + dy*dy);
+            const ux = dx/len, uy = dy/len;
+            const startX = a.x + ux * a.r, startY = a.y + uy * a.r;
+            const endX = b.x - ux * (b.r + 6), endY = b.y - uy * (b.r + 6);
+
+            // Offset for one-way to avoid overlapping
+            const offset = isMutual ? 0 : 3;
+            const px = -uy * offset, py = ux * offset;
+
+            svg.append('line')
+                .attr('x1', startX + px).attr('y1', startY + py)
+                .attr('x2', endX + px).attr('y2', endY + py)
+                .attr('stroke', color).attr('stroke-width', width)
+                .attr('stroke-opacity', 0.7)
+                .attr('marker-end', `url(#arrow-${isMutual ? 'mutual' : 'oneway'})`);
+        });
+
+        // Define arrowhead markers
+        const defs = svg.append('defs');
+        [['mutual', '#4ade80'], ['oneway', '#fbbf24']].forEach(([id, fill]) => {
+            defs.append('marker').attr('id', `arrow-${id}`)
+                .attr('viewBox', '0 0 10 10').attr('refX', 8).attr('refY', 5)
+                .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
+                .append('path').attr('d', 'M 0 0 L 10 5 L 0 10 z').attr('fill', fill);
+        });
+    }
+
+    // Draw nodes
+    const groups = svg.selectAll('g.node').data(nodes).join('g').attr('class', 'node');
+
+    groups.append('circle')
+        .attr('cx', d => d.x).attr('cy', d => d.y).attr('r', d => d.r)
+        .attr('fill', d => d.score > 0 ? '#7c6ff7' : d.score === 0 ? '#4a4a7a' : '#5a2a2a')
+        .attr('stroke', '#2a2a4a').attr('stroke-width', 2);
+
+    groups.append('text')
+        .attr('x', d => d.x).attr('y', d => d.y - d.r - 8)
+        .attr('text-anchor', 'middle').attr('fill', '#ccc').attr('font-size', 12)
+        .attr('font-weight', 500)
+        .text(d => d.name);
+
+    groups.append('text')
+        .attr('x', d => d.x).attr('y', d => d.y + 4)
+        .attr('text-anchor', 'middle').attr('fill', '#fff').attr('font-size', 11)
+        .attr('font-weight', 700)
+        .text(d => d.score);
+}
+
+function renderFeed() {
+    const list = document.getElementById('feed-list');
+    const activity = (state.recent_activity || []).slice().reverse().slice(0, 30);
+    list.innerHTML = activity.map(m => {
+        const time = new Date(m.timestamp * 1000).toLocaleTimeString();
+        if (m.type === 'broadcast') {
+            return `<div class="feed-item feed-bc">
+                <span class="feed-time">${time}</span>
+                [BC] <b>${esc(m.from)}</b>: "${esc(m.content || '')}"
+            </div>`;
+        } else {
+            return `<div class="feed-item feed-dm">
+                <span class="feed-time">${time}</span>
+                [DM] <b>${esc(m.from)}</b> <span class="feed-arrow">→</span> <b>${esc(m.to || '?')}</b>
+            </div>`;
+        }
+    }).join('');
+}
+
+function renderScoreChart() {
+    const allResults = state.all_round_results || {};
+    const rounds = Object.keys(allResults).map(Number).sort((a,b) => a-b);
+    if (rounds.length === 0) return;
+
+    const players = (state.players || []).map(p => p.name);
+    const colors = ['#7c6ff7','#4ade80','#f87171','#fbbf24','#60a5fa','#a78bfa','#f472b6','#34d399'];
+
+    const datasets = players.map((name, i) => {
+        const data = rounds.map(r => allResults[r]?.scores_after?.[name] ?? null);
+        return {
+            label: name,
+            data,
+            borderColor: colors[i % colors.length],
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            pointRadius: 3,
+        };
+    });
+
+    const ctx = document.getElementById('score-chart');
+    if (scoreChart) scoreChart.destroy();
+    scoreChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: rounds.map(r => `R${r}`), datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#888', font: { size: 10 } } } },
+            scales: {
+                x: { ticks: { color: '#666' }, grid: { color: '#1a1a2a' } },
+                y: { ticks: { color: '#666' }, grid: { color: '#1a1a2a' } },
+            },
+        },
+    });
+}
+
+function renderVoteMatrix() {
+    const allResults = state.all_round_results || {};
+    const rounds = Object.keys(allResults).map(Number).sort((a,b) => a-b);
+    if (rounds.length === 0) {
+        document.getElementById('matrix-content').innerHTML = '<p style="color:#444;font-size:13px">No completed rounds yet</p>';
+        return;
+    }
+
+    if (viewingRound === null) viewingRound = rounds[rounds.length - 1];
+    viewingRound = Math.max(rounds[0], Math.min(rounds[rounds.length - 1], viewingRound));
+    document.getElementById('round-display').textContent = `Round ${viewingRound}`;
+
+    // Fetch pledge map
+    fetch(`/api/votes/${viewingRound}`).then(r => r.json()).then(data => {
+        if (data.error) {
+            document.getElementById('matrix-content').innerHTML = `<p style="color:#666">${data.error}</p>`;
+            return;
+        }
+        const players = data.players || [];
+        const pledges = data.pledges || {};
+        let html = '<table><tr><th>Agent</th><th>Pledged To</th><th>Received From</th></tr>';
+        players.forEach(p => {
+            const pledgedTo = pledges[p] || '—';
+            const receivedFrom = players.filter(other => pledges[other] === p);
+            const isMutual = pledgedTo && pledges[pledgedTo] === p;
+            const pledgeClass = isMutual ? 'vote-s' : (pledgedTo && pledgedTo !== '—' ? 'vote-d' : 'vote-na');
+            html += `<tr>
+                <th>${esc(p)}</th>
+                <td class="${pledgeClass}">${pledgedTo ? esc(pledgedTo) : '— (abstain)'}${isMutual ? ' 🤝' : ''}</td>
+                <td>${receivedFrom.length > 0 ? receivedFrom.map(r => esc(r)).join(', ') : '<span class="vote-na">none</span>'}</td>
+            </tr>`;
+        });
+        html += '</table>';
+        document.getElementById('matrix-content').innerHTML = html;
+    });
+}
+
+document.getElementById('round-prev').onclick = () => { if (viewingRound > 1) { viewingRound--; renderVoteMatrix(); } };
+document.getElementById('round-next').onclick = () => { viewingRound++; renderVoteMatrix(); };
+
+function renderVoteStatus() {
+    const el = document.getElementById('vote-status');
+    if (state.status !== 'running' || state.current_phase !== 'voting' || !state.vote_status) {
+        el.innerHTML = '';
+        return;
+    }
+    el.innerHTML = Object.entries(state.vote_status).map(([name, voted]) =>
+        `<span class="vote-chip ${voted ? 'voted' : 'pending'}">${esc(name)} ${voted ? '✓' : '⏳'}</span>`
+    ).join('');
+}
+
+function renderAdminButtons() {
+    const s = state.status || 'setup';
+    const playerCount = (state.players || []).length;
+
+    document.getElementById('btn-open-lobby').disabled = s !== 'setup';
+    document.getElementById('btn-start').disabled = s !== 'lobby' || playerCount < 3;
+    document.getElementById('btn-pause').disabled = s !== 'running';
+    document.getElementById('btn-resume').disabled = s !== 'paused';
+    document.getElementById('btn-end').disabled = (s !== 'running' && s !== 'paused');
+
+    const sel = document.getElementById('select-kick');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Kick player...</option>' +
+        (state.players || []).map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    sel.value = current;
+    document.getElementById('btn-kick').disabled = playerCount === 0;
+}
+
+function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// Initial load
+fetch('/api/state').then(r => r.json()).then(d => { state = d; render(); });
+</script>
+</body>
+</html>

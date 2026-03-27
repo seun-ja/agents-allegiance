@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.ec2-instance.json
+test_*.py
+GAME_DESIGN.md
+deploy.sh
+teardown.sh
+.dockerignore
+.git/
